@@ -20,7 +20,8 @@ defmodule AeMdw.Application do
     # init(:aesophia)
 
     children =
-      [AeMdw.Sync.Watcher,
+      [AeMdw.RocksdbManager,
+       AeMdw.Sync.Watcher,
        AeMdw.Sync.Supervisor,
        AeMdwWeb.Supervisor,
        AeMdwWeb.Websocket.Supervisor]

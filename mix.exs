@@ -50,7 +50,9 @@ defmodule AeMdw.MixProject do
       {:websockex, "~> 0.4.2"},
       {:phoenix_swagger, "~> 0.8"},
       {:temp, "~> 0.4"},
-      {:tesla, "~> 1.3.0"}
+      {:tesla, "~> 1.3.0"},
+      {:rocksdb, "~> 1.6"},
+      {:sext, "~> 1.8"},
     ]
   end
 end
