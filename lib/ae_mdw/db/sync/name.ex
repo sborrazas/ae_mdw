@@ -19,7 +19,7 @@ defmodule AeMdw.Db.Sync.Name do
       revoke_or_expire_height: 2
     ]
 
-  import AeMdw.{Util, Db.Util}
+  import AeMdw.{Util, Db.RocksdbUtil}
 
   ##########
 
