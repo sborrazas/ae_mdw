@@ -5,7 +5,6 @@ defmodule AeMdw.Db.Sync.Name do
 
   require Record
   require Model
-  require Ex2ms
 
   import AeMdw.Db.Name,
     only: [
