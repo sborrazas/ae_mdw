@@ -38,6 +38,14 @@ defmodule AeMdw.Node.Db do
     {block_hash, type, signed_tx, tx_rec}
   end
 
+  def get_tx_data({:inner_tx, <<_::256>> = tx_hash}) do
+    {block_hash, outer_signed_tx} = :aec_db.find_tx_with_location(tx_hash)
+    {inner_mod, inner_tx} = AeMdw.Db.Sync.InnerTx.mod_tx(outer_signed_tx)
+    inner_aetx = :aetx.new(inner_mod, inner_tx)
+    inner_signed_tx = :aetx_sign.new(inner_aetx, [])
+    {block_hash, inner_mod.type(), inner_signed_tx, inner_tx}
+  end  
+  
   def get_tx(<<_::256>> = tx_hash) do
     {_, signed_tx} = :aec_db.find_tx_with_location(tx_hash)
     {_, tx_rec} = :aetx.specialize_type(:aetx_sign.tx(signed_tx))

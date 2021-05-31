@@ -112,82 +112,86 @@ defmodule AeMdw.Db.Sync.Transaction do
     {mod, tx} = :aetx.specialize_callback(:aetx_sign.tx(signed_tx))
     hash = :aetx_sign.hash(signed_tx)
     type = mod.type()
-    model_tx = Model.tx(index: txi, id: hash, block_index: block_index, time: mb_time)
 
-    :ets.insert(:tx_sync_cache, {txi, model_tx})
-    :mnesia.write(Model.Tx, model_tx, :write)
-    :mnesia.write(Model.Type, Model.type(index: {type, txi}), :write)
-    :mnesia.write(Model.Time, Model.time(index: {mb_time, txi}), :write)
-    write_links(type, tx, signed_tx, txi, hash, block_index)
-
-    with :contract_call_tx <- type do
-      ct_pk = :aect_call_tx.contract_pubkey(tx)
-      ct_txi = Sync.Contract.get_txi(ct_pk)
-      events = Map.get(mb_events, hash, [])
-      Sync.Contract.events(events, txi, ct_txi)
-    end
-
-    for {field, pos} <- AE.tx_ids(type) do
-      <<_::256>> = pk = resolve_pubkey(elem(tx, pos), type, field, block_index)
-      write_field(type, pos, pk, txi)
-    end
-
-    txi + 1
+    write_data(type, txi, hash, block_index, mb_time, false)
+    sync_contract_events(type, tx, txi, hash, mb_events)
+    write_fields(type, tx, txi, block_index)
+    write_links(type, tx, signed_tx, txi, hash, block_index, mb_time, mb_events)
   end
 
   ##########
 
-  def write_links(:contract_create_tx, tx, _signed_tx, txi, tx_hash, bi) do
+  def write_links(:contract_create_tx, tx, _signed_tx, txi, tx_hash, bi, _mb_time, _mb_events) do
     pk = :aect_contracts.pubkey(:aect_contracts.new(tx))
     owner_pk = :aect_create_tx.owner_pubkey(tx)
     :ets.insert(:ct_create_sync_cache, {pk, txi})
     write_origin(:contract_create_tx, pk, txi, tx_hash)
     Sync.Contract.create(pk, owner_pk, txi, bi)
+    txi + 1
   end
 
-  def write_links(:contract_call_tx, tx, _signed_tx, txi, _tx_hash, bi) do
+  def write_links(:contract_call_tx, tx, _signed_tx, txi, _tx_hash, bi, _mb_time, _mb_events) do
     pk = :aect_call_tx.contract_pubkey(tx)
     Sync.Contract.call(pk, tx, txi, bi)
+    txi + 1
   end
 
-  def write_links(:channel_create_tx, _tx, signed_tx, txi, tx_hash, _bi) do
+  def write_links(:channel_create_tx, _tx, signed_tx, txi, tx_hash, _bi, _mb_time, _mb_events) do
     {:ok, pk} = :aesc_utils.channel_pubkey(signed_tx)
     write_origin(:channel_create_tx, pk, txi, tx_hash)
+    txi + 1
   end
 
-  def write_links(:oracle_register_tx, tx, _signed_tx, txi, tx_hash, bi) do
+  def write_links(:oracle_register_tx, tx, _signed_tx, txi, tx_hash, bi, _mb_time, _mb_events) do
     pk = :aeo_register_tx.account_pubkey(tx)
     write_origin(:oracle_register_tx, pk, txi, tx_hash)
     Sync.Oracle.register(pk, tx, txi, bi)
+    txi + 1
   end
 
-  def write_links(:oracle_extend_tx, tx, _signed_tx, txi, _tx_hash, bi),
-    do: Sync.Oracle.extend(:aeo_extend_tx.oracle_pubkey(tx), tx, txi, bi)
+  def write_links(:oracle_extend_tx, tx, _signed_tx, txi, _tx_hash, bi, _mb_time, _mb_events),
+    do: (Sync.Oracle.extend(:aeo_extend_tx.oracle_pubkey(tx), tx, txi, bi); txi + 1)
 
-  def write_links(:oracle_response_tx, tx, _signed_tx, txi, _tx_hash, bi),
-    do: Sync.Oracle.respond(:aeo_response_tx.oracle_pubkey(tx), tx, txi, bi)
+  def write_links(:oracle_response_tx, tx, _signed_tx, txi, _tx_hash, bi, _mb_time, _mb_events),
+    do: (Sync.Oracle.respond(:aeo_response_tx.oracle_pubkey(tx), tx, txi, bi); txi + 1)
   
-  def write_links(:name_claim_tx, tx, _signed_tx, txi, tx_hash, bi) do
+  def write_links(:name_claim_tx, tx, _signed_tx, txi, tx_hash, bi, _mb_time, _mb_events) do
     plain_name = String.downcase(:aens_claim_tx.name(tx))
     {:ok, name_hash} = :aens.get_name_hash(plain_name)
     write_origin(:name_claim_tx, name_hash, txi, tx_hash)
     Sync.Name.claim(plain_name, name_hash, tx, txi, bi)
+    txi + 1
   end
 
-  def write_links(:name_update_tx, tx, _signed_tx, txi, _tx_hash, bi),
-    do: Sync.Name.update(:aens_update_tx.name_hash(tx), tx, txi, bi)
+  def write_links(:name_update_tx, tx, _signed_tx, txi, _tx_hash, bi, _mb_time, _mb_events),
+    do: (Sync.Name.update(:aens_update_tx.name_hash(tx), tx, txi, bi); txi + 1)
 
-  def write_links(:name_transfer_tx, tx, _signed_tx, txi, _tx_hash, bi),
-    do: Sync.Name.transfer(:aens_transfer_tx.name_hash(tx), tx, txi, bi)
+  def write_links(:name_transfer_tx, tx, _signed_tx, txi, _tx_hash, bi, _mb_time, _mb_events),
+    do: (Sync.Name.transfer(:aens_transfer_tx.name_hash(tx), tx, txi, bi); txi + 1)
 
-  def write_links(:name_revoke_tx, tx, _signed_tx, txi, _tx_hash, bi),
-    do: Sync.Name.revoke(:aens_revoke_tx.name_hash(tx), tx, txi, bi)
+  def write_links(:name_revoke_tx, tx, _signed_tx, txi, _tx_hash, bi, _mb_time, _mb_events),
+    do: (Sync.Name.revoke(:aens_revoke_tx.name_hash(tx), tx, txi, bi); txi + 1)
 
-  def write_links(_, _, _, _, _, _),
-    do: :nop
+  def write_links(:paying_for_tx, _tx, signed_tx, txi, tx_hash, bi, mb_time, mb_events),
+    do: Sync.InnerTx.sync(signed_tx, txi, tx_hash, bi, mb_time, mb_events)
+
+  def write_links(:ga_meta_tx, _tx, signed_tx, txi, tx_hash, bi, mb_time, mb_events),
+    do: Sync.InnerTx.sync(signed_tx, txi, tx_hash, bi, mb_time, mb_events)
+  
+  def write_links(_type, _tx, _stx, txi, _, _, _, _),
+    do: txi + 1
 
   ####
 
+  def write_data(type, txi, tx_hash, block_index, mb_time, inner_tx?) do
+    id = inner_tx? && {:inner_tx, tx_hash} || tx_hash
+    model_tx = Model.tx(index: txi, id: id, block_index: block_index, time: mb_time)
+    :ets.insert(:tx_sync_cache, {txi, model_tx})
+    :mnesia.write(Model.Tx, model_tx, :write)
+    :mnesia.write(Model.Type, Model.type(index: {type, txi}), :write)
+    :mnesia.write(Model.Time, Model.time(index: {mb_time, txi}), :write)
+  end
+  
   def write_origin(tx_type, pubkey, txi, tx_hash) do
     m_origin = Model.origin(index: {tx_type, pubkey, txi}, tx_id: tx_hash)
     m_rev_origin = Model.rev_origin(index: {txi, tx_type, pubkey})
@@ -196,12 +200,28 @@ defmodule AeMdw.Db.Sync.Transaction do
     write_field(tx_type, nil, pubkey, txi)
   end
 
+  def write_fields(tx_type, tx, txi, block_index) do
+    for {field, pos} <- AE.tx_ids(tx_type) do
+      <<_::256>> = pk = resolve_pubkey(elem(tx, pos), tx_type, field, block_index)
+      write_field(tx_type, pos, pk, txi)
+    end
+  end
+
   def write_field(tx_type, pos, pubkey, txi) do
     m_field = Model.field(index: {tx_type, pos, pubkey, txi})
     :mnesia.write(Model.Field, m_field, :write)
     Model.incr_count({tx_type, pos, pubkey})
   end
 
+  def sync_contract_events(:contract_call_tx, tx, txi, tx_hash, mb_events) do
+    ct_pk = :aect_call_tx.contract_pubkey(tx)
+    ct_txi = Sync.Contract.get_txi(ct_pk)
+    events = Map.get(mb_events, tx_hash, [])
+    Sync.Contract.events(events, txi, ct_txi)
+  end
+  def sync_contract_events(_, _tx, _txi, _tx_hash, _mb_events),
+    do: nil
+  
   ##########
 
   def resolve_pubkey(id, :spend_tx, :recipient_id, block_index) do
