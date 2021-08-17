@@ -34,3 +34,6 @@ log/
 REVISION
 VERSION
 *~
+
+# Local dev-only files
+/mnesia/

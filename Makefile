@@ -69,3 +69,35 @@ test:
 .PHONY: help
 help:
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' Makefile | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-30s\033[0m %s\n", $$1, $$2}'
+
+################################################################################
+## DOCKER TARGETS
+################################################################################
+
+.PHONY: docker-lint
+docker-lint:
+	$(call docker_execute,./scripts/lint.sh)
+
+.PHONY: docker-test
+docker-test:
+	$(call docker_execute,./scripts/test.sh)
+
+.PHONY: docker-dialyzer
+docker-dialyzer:
+	$(call docker_execute,./scripts/dialyzer.sh)
+
+.PHONY: docker-shell
+docker-shell:
+	$(call docker_execute,/bin/bash)
+
+.PHONY: docker-deps
+docker-deps:
+	$(call docker_execute,/bin/bash -c "mix deps.get")
+
+define docker_execute
+	docker-compose run --rm \
+										 --workdir=/app \
+										 --entrypoint="" \
+										 ae_mdw \
+										 $(1)
+endef
